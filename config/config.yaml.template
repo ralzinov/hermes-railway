@@ -1,0 +1,20 @@
+model:
+  default: google/gemini-3.1-flash-lite
+  provider: openrouter
+  base_url: https://openrouter.ai/api/v1
+
+data_dir: /data/.hermes
+
+terminal:
+  backend: local
+  timeout: 60
+  cwd: /tmp
+
+agent:
+  max_iterations: 50
+
+mcp_servers:
+  composio:
+    url: https://connect.composio.dev/mcp
+    headers:
+      x-consumer-api-key: ${COMPOSIO_API_KEY}
