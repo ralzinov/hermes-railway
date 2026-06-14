@@ -1,0 +1,36 @@
+services:
+  supermemory:
+    build: ./supermemory
+    environment:
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      SUPERMEMORY_API_KEY: ${SUPERMEMORY_API_KEY}
+      SUPERMEMORY_DATA_DIR: /data
+      PORT: "6767"
+    volumes:
+      - supermemory-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://127.0.0.1:6767/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 60s
+
+  hermes:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: "8080"
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY}
+      COMPOSIO_MCP_KEY: ${COMPOSIO_MCP_KEY}
+      SUPERMEMORY_API_KEY: ${SUPERMEMORY_API_KEY}
+      SUPERMEMORY_BASE_URL: http://supermemory:6767
+    volumes:
+      - hermes-data:/data
+    depends_on:
+      supermemory:
+        condition: service_healthy
+
+volumes:
+  supermemory-data:
+  hermes-data:

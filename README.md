@@ -1,114 +1,140 @@
-# Bare Hermes — Railway Template
+# Bare Hermes + Supermemory — Railway Template
 
-Deploy [Hermes Agent](https://github.com/NousResearch/hermes-agent) on [Railway](https://railway.app) with zero post-deploy configuration. Paste two API keys at deploy time and you're live — OpenRouter for the LLM, Composio for MCP tools.
+Deploy [Hermes Agent](https://github.com/NousResearch/hermes-agent) with self-hosted [Supermemory](https://supermemory.ai/docs/self-hosting/overview) on [Railway](https://railway.app). Paste two API keys at deploy time — zero post-deploy configuration.
+
+**Two services:**
+
+| Service | Role |
+|---------|------|
+| **hermes** | Agent gateway, API (`/v1/*`), dashboard — public HTTP |
+| **supermemory** | Long-term memory engine — **private** networking only |
 
 Pre-baked defaults:
 
 - **Model:** `google/gemini-3.1-flash-lite` via OpenRouter
-- **MCP:** Composio (`https://connect.composio.dev/mcp`)
-- **API:** OpenAI-compatible server at `/v1/*`
-- **Dashboard:** Native Hermes web UI at `/`
+- **Memory:** Supermemory (`memory.provider: supermemory`)
+- **MCP:** Composio
+- **API:** OpenAI-compatible at `/v1/*`
 
-No admin wizard, no cookie auth, no setup screens.
+## Deploy to Railway (2 services)
 
-## Deploy to Railway
+### 1. Create the project
 
-1. Fork or push this repo, then create a new Railway project from it (or publish as a Railway template).
-2. Set **required** service variables:
-   - `OPENROUTER_API_KEY` — from [OpenRouter](https://openrouter.ai/keys)
-   - `COMPOSIO_API_KEY` — from [Composio](https://app.composio.dev/)
-3. Attach a **volume** mounted at `/data` (persists sessions, memory, and config across redeploys).
-4. Enable **HTTP** public networking on the service (Railway sets `PORT` automatically).
-5. Deploy. Check deploy logs for `API_SERVER_KEY` if you didn't set one.
+**You need two services in the same Railway project.** Adding env vars to a single Hermes-only deploy will not work — Supermemory is a separate service on the private network.
 
-### Optional variables
+Add **two services** from this repo:
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `API_SERVER_KEY` | auto-generated | Bearer token for `/v1/*` API calls. Use `${{ secret(32) }}` in Railway Template Composer, or read from deploy logs. |
-| `HERMES_REF` | `v2026.6.5` | Hermes Agent git tag to install (Docker build arg). |
+| Service name | Root directory | Dockerfile |
+|--------------|----------------|------------|
+| `hermes` (any public name is fine) | `/` (repo root) | `Dockerfile` |
+| **`supermemory`** (name must be exactly this) | `/` | `supermemory/Dockerfile` |
 
-## What you get
+In Railway, set each service's **Root Directory** to the repo root, then set **Dockerfile Path** to `Dockerfile` or `supermemory/Dockerfile` respectively.
 
-```
-Railway URL ($PORT)
-├── /health          → API health check
-├── /v1/*            → OpenAI-compatible API (Bearer auth)
-└── /*               → Hermes dashboard (no login at proxy layer)
-```
+### 2. Volumes
 
-Internal processes (loopback only):
+| Service | Mount path |
+|---------|------------|
+| `hermes` | `/data` |
+| `supermemory` | `/data` |
 
-- Gateway + API server on `127.0.0.1:8642`
-- Dashboard on `127.0.0.1:9119`
+### 3. Networking
 
-## API usage
+| Service | Networking |
+|---------|------------|
+| `hermes` | **Public HTTP** (Railway sets `PORT`) |
+| `supermemory` | **Private only** — do not expose publicly |
 
-After deploy, find your `API_SERVER_KEY` in Railway deploy logs (unless you set it yourself).
+### 4. Variables
 
-```bash
-# Health
-curl https://your-app.up.railway.app/health
+Set these as **Shared Variables** (Project Settings → Shared Variables) so both services receive the same values:
 
-# List models
-curl -H "Authorization: Bearer $API_SERVER_KEY" \
-  https://your-app.up.railway.app/v1/models
+| Variable | Required | Notes |
+|----------|----------|-------|
+| `OPENROUTER_API_KEY` | Yes | Hermes LLM + Supermemory extraction LLM |
+| `COMPOSIO_MCP_KEY` | Yes | Composio MCP |
+| `SUPERMEMORY_API_KEY` | Yes (auto on template) | Random per deployment — use `sm_${{secret(48, "0123456789abcdef")}}` in the template default so Railway generates it; both services share the same value |
 
-# Chat completion
-curl -X POST https://your-app.up.railway.app/v1/chat/completions \
-  -H "Authorization: Bearer $API_SERVER_KEY" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "hermes-agent",
-    "messages": [{"role": "user", "content": "Hello"}]
-  }'
-```
+Memory is isolated to this Hermes + Supermemory pair: each template install gets its own generated key.
 
-Point any OpenAI-compatible client at `https://your-app.up.railway.app/v1` with `Authorization: Bearer <API_SERVER_KEY>`.
+Hermes connects to Supermemory at `http://supermemory.railway.internal:6767` by default (private Railway DNS). Name the supermemory service **`supermemory`**.
 
-## Dashboard
+**Optional (Hermes):**
 
-Open your Railway URL in a browser. The native Hermes dashboard loads directly — no login prompt from this template.
+| Variable | Default |
+|----------|---------|
+| `API_SERVER_KEY` | auto-generated, logged on deploy |
+| `HERMES_REF` | `v2026.6.5` (Docker build arg) |
 
-**Security note:** The dashboard is publicly reachable at your Railway URL without authentication. Anyone with the URL can access session data and key management UI. The API is protected by `API_SERVER_KEY`. For production, consider Railway private networking or placing your own auth layer in front.
+### 5. Deploy order
 
-## Running locally
-
-```bash
-docker build -t bare-hermes .
-docker run --rm -it -p 8080:8080 \
-  -e PORT=8080 \
-  -e OPENROUTER_API_KEY=sk-or-... \
-  -e COMPOSIO_API_KEY=comp_... \
-  -v hermes-data:/data \
-  bare-hermes
-```
-
-- Dashboard: `http://localhost:8080/`
-- API: `http://localhost:8080/v1/` (Bearer token printed in container logs)
-
-## Publishing as a Railway template
-
-1. Deploy this repo once on Railway with a volume at `/data` and HTTP enabled.
-2. In Railway project **Settings → Template**, click **Generate Template from Project**.
-3. In Template Composer, mark `OPENROUTER_API_KEY` and `COMPOSIO_API_KEY` as **required**.
-4. Optionally set `API_SERVER_KEY` default to `${{ secret(32) }}`.
-5. Publish and share the template URL.
+Deploy **supermemory first**, confirm its logs show `[supermemory] API on :6767`, then deploy **hermes**. Hermes tries Supermemory for ~30s on boot; if it's not up yet, Hermes still starts (memory tools fail until Supermemory is healthy).
 
 ## Architecture
 
 ```
-Internet → Railway $PORT → proxy.py (no auth)
+Internet → hermes ($PORT) → proxy.py
                               ├── /health, /v1/* → gateway API :8642
-                              └── /* + WebSockets → dashboard :9119
+                              └── /* → dashboard :9119
+                                    │
+                                    └── memory provider → Supermemory (private :6767)
+                                                              └── volume /data
 ```
 
-Config is rendered at boot from [`config/config.yaml.template`](config/config.yaml.template) and [`config/env.template`](config/env.template) by [`start.sh`](start.sh).
+Supermemory uses your OpenRouter key for memory extraction (same model as Hermes by default). Embeddings run locally inside the Supermemory binary.
+
+## API usage
+
+```bash
+curl https://your-hermes.up.railway.app/health
+
+curl -H "Authorization: Bearer $API_SERVER_KEY" \
+  https://your-hermes.up.railway.app/v1/models
+```
+
+See deploy logs for `API_SERVER_KEY` if you did not set one.
+
+## Memory tools
+
+With Supermemory configured, Hermes exposes tools such as `supermemory_search`, `supermemory_store`, `supermemory_profile`, and `supermemory_forget`, plus automatic recall/capture each turn. Config: [`config/supermemory.json`](config/supermemory.json).
+
+**Note:** Hermes session-end conversation ingest currently posts to Supermemory Cloud (`api.supermemory.ai`) in upstream Hermes — turn-by-turn memory via the SDK still uses your self-hosted `SUPERMEMORY_BASE_URL`. Watch [hermes-agent](https://github.com/NousResearch/hermes-agent) for self-hosted ingest fixes.
+
+## Running locally
+
+```bash
+cp .env.example .env
+# Fill OPENROUTER_API_KEY and COMPOSIO_MCP_KEY in .env, then generate a shared memory key:
+echo "SUPERMEMORY_API_KEY=sm_$(openssl rand -hex 24)" >> .env
+docker compose up --build
+```
+
+- Dashboard: http://localhost:8080/
+- Supermemory: http://localhost:6767 (internal to compose network; not published by default)
+
+Use the same OpenRouter + Composio keys and one shared `SUPERMEMORY_API_KEY` in `.env` (see above).
+
+## Publishing as a Railway template
+
+1. Deploy both services with volumes and variables as above.
+2. Project **Settings → Template → Generate Template from Project**.
+3. Mark `OPENROUTER_API_KEY` and `COMPOSIO_MCP_KEY` as **required shared** variables.
+4. Set shared `SUPERMEMORY_API_KEY` default to `sm_${{secret(48, "0123456789abcdef")}}` (Railway generates a unique value per install).
+5. Name the supermemory service **`supermemory`** (Hermes uses `http://supermemory.railway.internal:6767` by default).
+6. Ensure the supermemory service has **no public domain**.
+
+## Security
+
+- **Hermes dashboard** is public without login at your Railway URL.
+- **Supermemory** should stay on private networking only.
+- **API** is protected by `API_SERVER_KEY`.
+- **Supermemory API** is protected by shared `SUPERMEMORY_API_KEY` (random per deployment via Railway `secret()`).
 
 ## Updating Hermes
 
-Bump `HERMES_REF` in the Dockerfile (or pass as a Railway Docker build arg) and redeploy. See [Hermes releases](https://github.com/NousResearch/hermes-agent/releases).
+Bump `HERMES_REF` in the root `Dockerfile` and redeploy the hermes service.
 
 ## Credits
 
 - [Hermes Agent](https://github.com/NousResearch/hermes-agent) by [Nous Research](https://nousresearch.com/)
+- [Supermemory](https://supermemory.ai/) self-hosted binary

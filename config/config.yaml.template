@@ -13,8 +13,11 @@ terminal:
 agent:
   max_iterations: 50
 
+memory:
+  provider: supermemory
+
 mcp_servers:
   composio:
     url: https://connect.composio.dev/mcp
     headers:
-      x-consumer-api-key: ${COMPOSIO_API_KEY}
+      x-consumer-api-key: ${COMPOSIO_MCP_KEY}

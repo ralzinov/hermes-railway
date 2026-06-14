@@ -1,0 +1,8 @@
+{
+  "container_tag": "hermes",
+  "auto_recall": true,
+  "auto_capture": true,
+  "max_recall_results": 10,
+  "profile_frequency": 50,
+  "search_mode": "hybrid"
+}
